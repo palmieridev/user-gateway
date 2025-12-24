@@ -1,0 +1,18 @@
+project_name = "secure-iam"
+environment  = "dev"
+aws_region   = "us-east-1"
+
+# MFA Configuration
+enable_mfa              = true
+enable_advanced_security = true
+
+# API Gateway Throttling
+api_throttle_rate  = 1000
+api_throttle_burst = 2000
+
+# Additional tags
+tags = {
+  Owner       = "YourName"
+  CostCenter  = "Engineering"
+  Compliance  = "SOC2"
+}
