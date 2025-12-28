@@ -221,6 +221,8 @@ resource "aws_api_gateway_stage" "main" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   stage_name    = var.environment
 
+
+
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_gateway.arn
     format = jsonencode({
@@ -266,7 +268,7 @@ resource "aws_api_gateway_method_settings" "main" {
 resource "aws_lambda_permission" "api_gateway" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
-  function_name = split(":", var.lambda_invoke_arn)[6]
+  function_name = regex("functions/(arn:aws:lambda:[^/]+:[0-9]+:function:[^/]+)/invocations", var.lambda_invoke_arn)[0]
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
 }

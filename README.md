@@ -108,6 +108,155 @@ export AWS_PROFILE=profile
 export AWS_REGION=us-east-1
 ```
 
+## Post-Deploy Verification
+
+Use these commands to confirm that Cognito and API Gateway were deployed correctly and are healthy.
+
+### Discover IDs and ARNs
+
+```bash
+# Get Cognito User Pools in the region
+aws cognito-idp list-user-pools --max-results 60
+
+# Describe a User Pool (replace with your pool ID)
+aws cognito-idp describe-user-pool --user-pool-id <USER_POOL_ID>
+
+# List User Pool clients
+aws cognito-idp list-user-pool-clients --user-pool-id <USER_POOL_ID> --max-results 60
+
+# Get API Gateway REST APIs
+aws apigateway get-rest-apis
+
+# Get stages for the API (replace with your REST API ID)
+aws apigateway get-stages --rest-api-id <REST_API_ID>
+```
+
+### Verify Cognito configuration
+
+```bash
+# Check MFA configuration
+aws cognito-idp describe-user-pool --user-pool-id <USER_POOL_ID> \
+  --query 'UserPool.MfaConfiguration'
+
+# Check advanced security
+aws cognito-idp describe-user-pool --user-pool-id <USER_POOL_ID> \
+  --query 'UserPool.UserPoolAddOns'
+
+# Verify domain (if configured)
+aws cognito-idp describe-user-pool --user-pool-id <USER_POOL_ID> \
+  --query 'UserPool.Domain'
+
+# Try sign-up and auth (replace values)
+aws cognito-idp sign-up \
+  --client-id <CLIENT_ID> \
+  --username user@example.com \
+  --password "SecureP@ssw0rd!" \
+  --user-attributes Name=email,Value=user@example.com
+
+aws cognito-idp initiate-auth \
+  --client-id <CLIENT_ID> \
+  --auth-flow USER_PASSWORD_AUTH \
+  --auth-parameters USERNAME=user@example.com,PASSWORD="SecureP@ssw0rd!"
+```
+
+### Verify API Gateway deployment and stage
+
+```bash
+# Confirm the deployment and stage exist
+aws apigateway get-stages --rest-api-id <REST_API_ID>
+
+# Get the API's base URL for the stage
+API_ID=<REST_API_ID>
+REGION=<REGION>
+STAGE=<ENVIRONMENT_STAGE> # e.g., dev
+BASE_URL="https://${API_ID}.execute-api.${REGION}.amazonaws.com/${STAGE}"
+echo "$BASE_URL"
+
+# Test public health endpoint (MOCK integration)
+curl -s "${BASE_URL}/health" | jq .
+
+# Test protected profile endpoint (requires Cognito token)
+# Replace <ID_TOKEN> with the token from initiate-auth
+curl -s -H "Authorization: Bearer <ID_TOKEN>" "${BASE_URL}/profile" | jq .
+```
+
+### Check CloudWatch logs
+
+```bash
+# API Gateway access logs
+aws logs describe-log-groups \
+  --log-group-name-prefix "/aws/apigateway/"
+
+# Lambda logs (replace function name if needed)
+aws logs describe-log-groups \
+  --log-group-name-prefix "/aws/lambda/"
+
+# Tail recent API Gateway logs (replace log group name)
+aws logs filter-log-events \
+  --log-group-name "/aws/apigateway/<PROJECT>-<ENV>" \
+  --limit 50
+```
+
+## Is the API deployed automatically?
+
+Yes. The Terraform `api-gateway` module creates:
+- `aws_api_gateway_deployment` to publish changes
+- `aws_api_gateway_stage` named after your environment (e.g., `dev`)
+
+After `terraform apply`, your API is live at:
+`https://<API_ID>.execute-api.<REGION>.amazonaws.com/<STAGE>`
+
+## Environment Workflow Guidance
+
+For a solo developer, a pragmatic workflow is:
+- Use two environments: `dev` and `prod`.
+- `dev`: fast iteration, no remote backend, state local. Validate changes end-to-end.
+- `prod`: remote backend (S3 + DynamoDB lock), change control, versioned artifacts.
+
+Recommended practices:
+- Keep `dev` as your integration test bed. Do not destroy on every change; reuse to catch regressions.
+- Only destroy `dev` when you need a clean slate or to reduce costs. Prefer `terraform destroy` within the targeted environment directory.
+- Promote changes to `prod` with:
+  - Remote backend enabled
+  - Variables tuned for production (throttling, MFA strictly enforced, tags)
+  - Least-privilege IAM reviewed
+
+Common failure points when switching to prod:
+- Backend/state migration mistakes (ensure S3 bucket and DynamoDB lock exist and are referenced correctly)
+- Missing environment-specific variables (e.g., different domains, stricter password/MFA)
+- IAM permission gaps (Lambda role policies insufficient for prod data sources)
+- API Gateway throttling too strict for real traffic
+- Cognito hosted domain conflicts (domain name must be globally unique)
+
+## Suggested Environment Workflow
+
+```bash
+# DEV (local state)
+cd environments/dev
+terraform init
+terraform plan
+terraform apply
+
+# Optional: clean dev
+terraform destroy
+
+# PROD (remote backend recommended)
+cd environments/prod
+
+# Example backend block (uncomment and configure in root module)
+# backend "s3" {
+#   bucket         = "<STATE_BUCKET>"
+#   key            = "user-gateway/terraform.tfstate"
+#   region         = "us-east-1"
+#   encrypt        = true
+#   dynamodb_table = "terraform-state-lock"
+# }
+
+terraform init -reconfigure
+terraform plan -var-file=terraform.tfvars
+terraform apply -var-file=terraform.tfvars
+```
+
 ##  Project Structure
 
 ```

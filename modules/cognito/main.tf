@@ -32,7 +32,7 @@ resource "aws_cognito_user_pool" "main" {
   auto_verified_attributes = ["email"]
 
   # Username configuration
-  username_attributes      = ["email"]
+  username_attributes = ["email"]
   username_configuration {
     case_sensitive = false
   }
@@ -50,8 +50,11 @@ resource "aws_cognito_user_pool" "main" {
   # MFA configuration
   mfa_configuration = var.enable_mfa ? "OPTIONAL" : "OFF"
 
-  software_token_mfa_configuration {
-    enabled = var.enable_mfa
+  dynamic "software_token_mfa_configuration" {
+    for_each = var.enable_mfa ? [1] : []
+    content {
+      enabled = true
+    }
   }
 
   # Account recovery
@@ -119,9 +122,9 @@ resource "aws_cognito_user_pool_client" "main" {
   supported_identity_providers         = ["COGNITO"]
 
   # Token validity
-  access_token_validity  = 60  # 60 minutes
-  id_token_validity      = 60  # 60 minutes
-  refresh_token_validity = 30  # 30 days
+  access_token_validity  = 60 # 60 minutes
+  id_token_validity      = 60 # 60 minutes
+  refresh_token_validity = 30 # 30 days
 
   token_validity_units {
     access_token  = "minutes"
